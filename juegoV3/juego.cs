@@ -16,17 +16,8 @@ class Equipo
     public int GetModificadorArmadura() => modificadorArmadura;
 }
 
-// ===================== ARMA =====================
-class Arma : Equipo
-{
-    public Arma(int modificadorAtaque) : base(modificadorAtaque, 0) { }
-}
-
-// ===================== ARMADURA =====================
-class Armadura : Equipo
-{
-    public Armadura(int modificadorArmadura) : base(0, modificadorArmadura) { }
-}
+class Arma : Equipo { public Arma(int mod) : base(mod, 0) { } }
+class Armadura : Equipo { public Armadura(int mod) : base(0, mod) { } }
 
 // ===================== PERSONAJE =====================
 class Personaje
@@ -58,16 +49,9 @@ class Personaje
         return (equipo != null) ? equipo.GetModificadorArmadura() : 0;
     }
 
-    // 🔥 CLAVE PARA SIMULTANEIDAD
-    public virtual int CalcularDanio()
-    {
-        return GetAtaque();
-    }
+    public virtual int CalcularDanio() => GetAtaque();
 
-    public virtual void AplicarDanio(int danio)
-    {
-        RecibirDanio(danio);
-    }
+    public virtual void AplicarDanio(int danio) => RecibirDanio(danio);
 
     public virtual void RecibirDanio(int danio)
     {
@@ -78,126 +62,84 @@ class Personaje
         if (vida < 0) vida = 0;
 
         if (vida == 0)
-            Console.WriteLine($"{nombre} recibe {danioTotal} puntos de daño. Ha muerto :(");
+            Console.WriteLine($"{nombre} recibe {danioTotal} de daño. ¡Ha muerto!");
         else
-            Console.WriteLine($"{nombre} recibe {danioTotal} puntos de daño.");
+            Console.WriteLine($"{nombre} recibe {danioTotal} de daño. (Vida: {vida})");
     }
 
-    public void Equipar(Equipo equipo)
-    {
-        this.equipo = equipo;
-    }
-
-    public void QuitarEquipo()
-    {
-        this.equipo = null;
-    }
-
+    public void Equipar(Equipo equipo) => this.equipo = equipo;
+    public void QuitarEquipo() => this.equipo = null;
     public bool EstaVivo() => vida > 0;
 }
 
-// ===================== SACERDOTE =====================
+// ===================== SUBCLASES =====================
 class Sacerdote : Personaje
 {
     private static Random random = new Random();
-
-    public Sacerdote(string nombre, int vida, int ataque)
-        : base(nombre, vida, ataque) { }
+    public Sacerdote(string n, int v, int a) : base(n, v, a) { }
 
     public override void RecibirDanio(int danio)
     {
         if (random.Next(1, 5) == 1)
         {
-            Console.WriteLine($"Las plegarias de {GetNombre()} han sido escuchadas");
-            danio = (int)Math.Round(danio / 2.0);
+            Console.WriteLine($"¡Las plegarias de {GetNombre()} reducen el daño a la mitad!");
+            danio /= 2;
         }
-
         base.RecibirDanio(danio);
     }
 }
 
-// ===================== BARBARO =====================
 class Barbaro : Personaje
 {
     private int furia;
-
-    public Barbaro(string nombre, int vida, int ataque, int furia)
-        : base(nombre, vida, ataque)
-    {
-        this.furia = furia;
-    }
+    public Barbaro(string n, int v, int a, int f) : base(n, v, a) { this.furia = f; }
 
     public override int CalcularDanio()
     {
-        int danio = GetAtaque();
-
+        int danioBase = GetAtaque();
         if (furia >= 3)
         {
-            Console.WriteLine($"{GetNombre()} ataca furioso");
-            danio = (int)Math.Round(danio * 1.15);
+            Console.WriteLine($"{GetNombre()} ataca furioso (+15% daño)");
             furia -= 3;
+            return (int)(danioBase * 1.15);
         }
-        else
-        {
-            Console.WriteLine($"{GetNombre()} está cansado");
-            danio = (int)Math.Round(danio * 0.5);
-        }
-
-        return danio;
+        Console.WriteLine($"{GetNombre()} está cansado (50% daño)");
+        return (int)(danioBase * 0.5);
     }
 }
 
-// ===================== MUSASHI =====================
 class Musashi : Personaje
 {
     private static Random random = new Random();
     private bool desarmar = false;
 
-    public Musashi(string nombre, int vida, int ataque)
-        : base(nombre, vida, ataque) { }
+    public Musashi(string n, int v, int a) : base(n, v, a) { }
 
     public override int CalcularDanio()
     {
-        desarmar = false;
-
-        if (random.Next(1, 5) == 1)
-        {
-            Console.WriteLine($"{GetNombre()} intentará desarmar!");
-            desarmar = true;
-        }
-
+        desarmar = (random.Next(1, 5) == 1);
+        if (desarmar) Console.WriteLine($"{GetNombre()} prepara un intento de desarme...");
         return GetAtaque();
-    }
-
-    public override void AplicarDanio(int danio)
-    {
-        base.AplicarDanio(danio);
     }
 
     public void AplicarHabilidad(Personaje objetivo)
     {
-        if (desarmar)
+        if (desarmar && objetivo.EstaVivo())
         {
-            Console.WriteLine($"{GetNombre()} desarma a {objetivo.GetNombre()}!");
+            Console.WriteLine($"{GetNombre()} ha desarmado a {objetivo.GetNombre()}!");
             objetivo.QuitarEquipo();
         }
     }
 
-    public override int GetArmadura()
-    {
-        return 0;
-    }
+    public override int GetArmadura() => 0; // Musashi no confía en armaduras
 }
 
 // ===================== JUEGO =====================
 class Juego
 {
-    static void Main()
-    {
-       ronda(); 
-    }
+    static void Main() => ronda();
 
-    public static void ronda();
+    public static void ronda() // Corregido: sin punto y coma extra
     {
         Personaje p1 = new Barbaro("Dave", 30, 8, 10);
         Personaje p2 = new Sacerdote("Samson", 30, 7);
@@ -209,56 +151,41 @@ class Juego
 
         if (ganador != null)
         {
-            Console.WriteLine($"\n{ganador.GetNombre()} ha ganado la batalla");
-
-            Personaje musashi = new Musashi("Musashi", 10, 4);
+            Console.WriteLine($"\n--- {ganador.GetNombre()} avanza a la Final ---");
+            Personaje musashi = new Musashi("Musashi", 20, 5);
             musashi.Equipar(new Arma(2));
 
-
-            Console.WriteLine("\n--- Segunda batalla ---\n");
-
             Personaje ganadorFinal = Batalla(musashi, ganador);
-
             if (ganadorFinal != null)
-                Console.WriteLine($"\n{ganadorFinal.GetNombre()} ha ganado la batalla final");
+                Console.WriteLine($"\nEL CAMPEÓN ES: {ganadorFinal.GetNombre()}");
             else
-                Console.WriteLine("\nNo hubo ganador en la batalla final");
-        //SI ES NULO es empate y han muerto? 
-        } 
+                Console.WriteLine("\nLa final terminó en un empate trágico.");
+        }
         else
         {
-           Console.WriteLine("ambos personajes han muerto porlo que Musashi no tiene con quien pelear"); 
+            Console.WriteLine("\nAmbos murieron. Musashi no tiene oponente.");
         }
-        
     }
 
     public static Personaje Batalla(Personaje p1, Personaje p2)
     {
-        Console.WriteLine("\n--- COMIENZA LA BATALLA ---\n");
+        Console.WriteLine($"\n--- INICIO: {p1.GetNombre()} vs {p2.GetNombre()} ---");
 
         while (p1.EstaVivo() && p2.EstaVivo())
         {
-            Console.WriteLine($"{p1.GetNombre()} Lucha con {p2.GetNombre()}");
-            // Console.WriteLine($"{p2.GetNombre()} ataca a {p1.GetNombre()}");
+            int d1 = p1.CalcularDanio();
+            int d2 = p2.CalcularDanio();
 
-            int danioP1 = p1.CalcularDanio();
-            int danioP2 = p2.CalcularDanio();
+            p2.AplicarDanio(d1);
+            p1.AplicarDanio(d2);
 
-            p2.AplicarDanio(danioP1);
-            p1.AplicarDanio(danioP2);
-            Console.WriteLine($"-{p1.GetNombre()} VIDA RESTANTE: " + p1.GetVida());
-            Console.WriteLine($"-{p2.GetNombre()} VIDA RESTANTE: " + p2.GetVida());
-
-            // Habilidad especial Musashi después del daño
             if (p1 is Musashi m1) m1.AplicarHabilidad(p2);
             if (p2 is Musashi m2) m2.AplicarHabilidad(p1);
-
-            Console.WriteLine();
+            Console.WriteLine("--------------------");
         }
 
         if (p1.EstaVivo()) return p1;
         if (p2.EstaVivo()) return p2;
-
         return null;
     }
 }
