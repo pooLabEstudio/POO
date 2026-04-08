@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<title>Mapa MVC</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;font-family:'Courier New',monospace}
+#bar{position:fixed;top:0;left:0;right:0;height:42px;background:#161b22;border-bottom:1px solid #30363d;display:flex;align-items:center;gap:8px;padding:0 12px;z-index:50;flex-wrap:wrap}
+#bar h1{font-size:12px;color:#58a6ff;font-weight:700;white-space:nowrap}
+.btn{padding:3px 9px;border-radius:5px;border:1px solid #30363d;background:#21262d;color:#e6edf3;font-size:10px;cursor:pointer}
+.btn:hover{background:#30363d}
+.leg{display:flex;gap:6px;margin-left:auto;align-items:center;flex-wrap:wrap}
+.li{display:flex;align-items:center;gap:3px;font-size:8.5px;color:#8b949e}
+.ld{width:9px;height:9px;border-radius:50%}
+#svg-wrap{position:fixed;top:42px;left:0;right:0;bottom:24px}
+svg{width:100%;height:100%;display:block}
+#foot{position:fixed;bottom:0;left:0;right:0;height:24px;background:#161b22;border-top:1px solid #30363d;display:flex;align-items:center;padding:0 10px;font-size:8.5px;color:#8b949e;gap:10px}
+#foot span{margin-left:auto}
+#tip{position:fixed;display:none;background:#161b22;border:1px solid #30363d;border-radius:7px;padding:9px 12px;width:280px;font-size:10px;color:#e6edf3;line-height:1.5;box-shadow:0 6px 24px #000a;z-index:100;pointer-events:none}
+#tip h3{font-size:11px;color:#fff;margin-bottom:2px}
+#tip .ts{font-size:8px;color:#8b949e;margin-bottom:5px}
+#tip pre{font-size:8.5px;color:#8b949e;white-space:pre-wrap;background:#0d1117;padding:5px 7px;border-radius:4px;border:1px solid #30363d;margin-bottom:5px}
+#tip .ti{font-size:9.5px;color:#c9d1d9;margin-bottom:4px}
+#tip .tr{font-size:8px;color:#58a6ff;white-space:pre-wrap}
+#tip .tc{font-size:8px;color:#484f58;margin-top:4px}
+</style>
+</head>
+<body>
+<div id="bar">
+  <h1>🗺 Mapa MVC — PW_Ejercicios</h1>
+  <span style="font-size:9px;color:#8b949e">nacho · seba · janvera</span>
+  <button class="btn" onclick="resetView()">Reset vista</button>
+  <button class="btn" onclick="toggleLbl()">Etiquetas</button>
+  <button class="btn" style="background:#1a3a1f;border-color:#2ea043;color:#56d364" onclick="saveLayout()">💾 Guardar JSON</button>
+  <button class="btn" style="background:#1a2f60;border-color:#388bfd;color:#79c0ff" onclick="document.getElementById('fileIn').click()">📂 Cargar JSON</button>
+  <input id="fileIn" type="file" accept=".json" style="display:none" onchange="loadLayout(event)"/>
+  <div class="leg">
+    <div class="li"><div class="ld" style="background:#388bfd"></div>Ctrl/Acción</div>
+    <div class="li"><div class="ld" style="background:#3fb950"></div>Modelo/Prop</div>
+    <div class="li"><div class="ld" style="background:#d29922"></div>Vista/Input</div>
+    <div class="li"><div class="ld" style="background:#bc8cff"></div>ViewBag</div>
+    <div class="li"><div class="ld" style="background:#8b949e"></div>Layout</div>
+  </div>
+</div>
+<div id="svg-wrap">
+  <svg id="S" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <pattern id="grid" width="100" height="100" patternUnits="userSpaceOnUse">
+        <path d="M100 0L0 0 0 100" fill="none" stroke="#161b22" stroke-width="0.5"/>
+      </pattern>
+      <marker id="arr" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+        <polygon points="0 0, 7 3.5, 0 7" fill="currentColor"/>
+      </marker>
+    </defs>
+    <rect width="100%" height="100%" fill="url(#grid)" id="bg"/>
+    <g id="G">
+      <g id="edges"></g>
+      <g id="nodes"></g>
+    </g>
+  </svg>
+</div>
+<div id="foot">
+  <span>🖱 Drag=mover · Rueda=zoom · Drag nodo=mover nodo · Click=info</span>
+  <span id="sb"></span>
+</div>
+<div id="tip">
+  <h3 id="t-title"></h3>
+  <div class="ts" id="t-sub"></div>
+  <pre id="t-code"></pre>
+  <div class="ti" id="t-info"></div>
+  <div class="tr" id="t-rels"></div>
+  <div class="tc">Click de nuevo para cerrar</div>
+</div>
+<script>
+// ── Datos ──────────────────────────────────────────────────────────────────
+const N=[
+ {id:"layout",lb:"_Layout\n.cshtml",  g:"layout",x:1800,y:80,
+  info:"Plantilla base. Navbar con links Ej1/Ej2/Ej3 + @RenderBody().",
+  code:'<nav asp-action=Index/Ej1/Ej2/Ej3>\n@RenderBody()'},
+ {id:"hc",    lb:"Home\nController", g:"ctrl",  x:1800,y:310,
+  info:"Controlador único. Todas las acciones GET del proyecto.",
+  code:"public class HomeController : Controller"},
+ {id:"hc_list",lb:"static\nlistado", g:"vbag",  x:2260,y:310,
+  info:"List<Registro> estática. Persiste durante la sesión.",
+  code:"static List<Registro> listado = new List<Registro>();"},
+ {id:"a_idx",  lb:"Index()",         g:"action",x:1050,y:520,info:"GET → View() → Index.cshtml",code:"public IActionResult Index() => View();"},
+ {id:"a_ej1",  lb:"Ejercicio1()",    g:"action",x:1290,y:520,info:"GET → View() → Ejercicio1.cshtml.",code:"public IActionResult Ejercicio1() => View();"},
+ {id:"a_cpar", lb:"Calcular\nParquimetro()",g:"action",x:1530,y:520,
+  info:"GET txtMinutos → new Parquimetro() → Calcular() → ViewBag.resultado → View(\"Ejercicio1\")",
+  code:"IActionResult CalcularParquimetro(string txtMinutos)"},
+ {id:"a_ej2",  lb:"Ejercicio2()",    g:"action",x:1770,y:520,info:"GET → View() → Ejercicio2.cshtml.",code:"public IActionResult Ejercicio2() => View();"},
+ {id:"a_cvel", lb:"Calcular\nVelocidad()",g:"action",x:2010,y:520,
+  info:"GET 5 params → new Recorrido() → CalcularVelocidad() → Math.Round → ViewBag → View",
+  code:"IActionResult CalcularVelocidad(txtHoras,txtMinutos,\ntxtSegundos,txtCentesimas,txtDistancia)"},
+ {id:"a_ej3",  lb:"Ejercicio3()",    g:"action",x:2250,y:520,info:"GET → ViewBag.respuesta=listado → View",code:"ViewBag.respuesta = listado; return View();"},
+ {id:"a_ctri", lb:"Calcular\nTriplicar()",g:"action",x:2490,y:520,
+  info:"GET txtNumero → new Registro() → Calcular() → listado.Add() → ViewBag",
+  code:"IActionResult CalcularTriplicar(string txtNumero)"},
+ {id:"vb1",    lb:"ViewBag\n.resultado(1)",g:"vbag",x:1390,y:730,
+  info:"Cobro CLP = parquimetro.Calcular(). Leído en @ViewBag.resultado de Ejercicio1.cshtml.",
+  code:"ViewBag.resultado = parquimetro.Calcular();\nViewBag.minutos = parquimetro.minutos;"},
+ {id:"vb2",    lb:"ViewBag\n.resultado(2)",g:"vbag",x:1870,y:730,
+  info:"Velocidad = Math.Round(recorrido.CalcularVelocidad(),2) km/hr.",
+  code:"ViewBag.resultado = Math.Round(recorrido.CalcularVelocidad(), 2);"},
+ {id:"vb3",    lb:"ViewBag\n.respuesta(3)",g:"vbag",x:2370,y:730,
+  info:"List<Registro> completa. Leída en @foreach de Ejercicio3.cshtml.",
+  code:"ViewBag.respuesta = listado;"},
+ {id:"vb_err", lb:"ViewBag\n.error(3)", g:"vbag",x:2590,y:730,
+  info:"Mensaje de error si txtNumero es null.",
+  code:'ViewBag.error = "Debe ingresar un número";'},
+ {id:"m_pq",   lb:"Parquimetro",    g:"model",x:790, y:940,
+  info:"Modelo Ej1. valorBase=1850, valorMinuto=23. Retorna cobro int.",
+  code:"public class Parquimetro { ... }"},
+ {id:"p_vb",   lb:"valorBase\n=1850",g:"prop",x:510, y:1160,info:"Tarifa base: primeros 25 min = $1850.",code:"public int valorBase { get; set; } = 1850;"},
+ {id:"p_vm",   lb:"valorMinuto\n=23",g:"prop",x:700, y:1260,info:"Valor por cada minuto adicional sobre 25.",code:"public int valorMinuto { get; set; } = 23;"},
+ {id:"p_m1",   lb:"minutos",        g:"prop",x:900, y:1260,info:"Minutos estacionado. Asignado desde controlador.",code:"public int minutos { get; set; } = 0;"},
+ {id:"f_cpq",  lb:"Calcular()\n→int",g:"func",x:680, y:1140,
+  info:"if minutos<=25: return valorBase\nelse: return valorBase+((minutos-25)*valorMinuto)",
+  code:"public int Calcular(){\n  if(minutos<=25) return valorBase;\n  return valorBase+((minutos-25)*valorMinuto);\n}"},
+ {id:"m_rc",   lb:"Recorrido",      g:"model",x:1810,y:940,
+  info:"Modelo Ej2. Calcula velocidad promedio en km/hr.",
+  code:"public class Recorrido { ... }"},
+ {id:"p_hr",lb:"horas",    g:"prop",x:1390,y:1165,info:"Horas del tiempo total.",code:"public double horas { get; set; } = 0;"},
+ {id:"p_m2",lb:"minutos",  g:"prop",x:1580,y:1270,info:"Minutos del tiempo.",code:"public double minutos { get; set; } = 0;"},
+ {id:"p_sg",lb:"segundos", g:"prop",x:1810,y:1320,info:"Segundos del tiempo.",code:"public double segundos { get; set; } = 0;"},
+ {id:"p_cn",lb:"centesimas",g:"prop",x:2040,y:1270,info:"Centésimas de segundo.",code:"public double centesimas { get; set; } = 0;"},
+ {id:"p_ds",lb:"distancia\n(m)",g:"prop",x:2150,y:1165,info:"Distancia en metros.",code:"public double distancia { get; set; } = 0;"},
+ {id:"f_cv",   lb:"Calcular\nVelocidad()\n→double",g:"func",x:1810,y:1145,
+  info:"totalHoras=h+min/60+seg/3600+cen/360000\ndistKm=distancia/1000\nreturn distKm/totalHoras",
+  code:"public double CalcularVelocidad(){\n  double th=horas+(minutos/60)+(segundos/3600)+(centesimas/360000);\n  return (distancia/1000)/th;\n}"},
+ {id:"m_rg",   lb:"Registro",       g:"model",x:2830,y:940,
+  info:"Modelo Ej3. Almacena numero, total, mensaje. Acumulado en lista estática.",
+  code:"public class Registro { ... }"},
+ {id:"p_nu",lb:"numero",  g:"prop",x:2630,y:1160,info:"Número ingresado.",code:"public double numero { get; set; } = 0;"},
+ {id:"p_to",lb:"total",   g:"prop",x:2830,y:1270,info:"Resultado (×3 o ÷4).",code:"public double total { get; set; } = 0;"},
+ {id:"p_ms",lb:"mensaje", g:"prop",x:3030,y:1160,info:'"Menor a 50" o "Mayor o igual a 50".',code:"public string? mensaje { get; set; }"},
+ {id:"f_ct",   lb:"Calcular()\n→void",g:"func",x:2930,y:1060,
+  info:'if numero<50: total=numero*3, mensaje="Menor a 50"\nelse: total=numero/4, mensaje="Mayor o igual a 50"',
+  code:"public void Calcular(){\n  if(numero<50){total=numero*3; mensaje=\"Menor a 50\";}\n  else{total=numero/4; mensaje=\"Mayor o igual a 50\";}\n}"},
+ {id:"v_idx",  lb:"Index\n.cshtml", g:"view",x:1050,y:310,info:"Vista principal. Renderizada por Index().",code:'asp-action="Index"'},
+ {id:"v_ej1",  lb:"Ejercicio1\n.cshtml",g:"view",x:530, y:665,
+  info:"Form POST → CalcularParquimetro. Muestra @ViewBag.resultado.",
+  code:'<form asp-action="CalcularParquimetro">\n  <input name="txtMinutos"/>\n</form>\n@ViewBag.resultado'},
+ {id:"v_ej2",  lb:"Ejercicio2\n.cshtml",g:"view",x:1060,y:840,
+  info:"5 inputs → CalcularVelocidad. Muestra @ViewBag.resultado km/hr.",
+  code:'<form asp-action="CalcularVelocidad">\n  txtHoras,txtMinutos,txtSegundos,\n  txtCentesimas,txtDistancia\n</form>'},
+ {id:"v_ej3",  lb:"Ejercicio3\n.cshtml",g:"view",x:3130,y:665,
+  info:"Input txtNumero → CalcularTriplicar. Grilla @foreach ViewBag.respuesta.",
+  code:"<table>\n@foreach(var item in ViewBag.respuesta){...}\n</table>"},
+ {id:"i_m1",   lb:"txtMinutos",     g:"input",x:350, y:865,info:"Input Ej1 → POST a CalcularParquimetro.",code:'<input type="number" name="txtMinutos"/>'},
+ {id:"i_hr",lb:"txtHoras",    g:"input",x:670, y:985,info:"Input horas Ej2.",code:'<input name="txtHoras"/>'},
+ {id:"i_mn",lb:"txtMinutos\n(Ej2)",g:"input",x:850,y:1055,info:"Input minutos Ej2.",code:'<input name="txtMinutos"/>'},
+ {id:"i_sg",lb:"txtSegundos", g:"input",x:1030,y:1055,info:"Input segundos Ej2.",code:'<input name="txtSegundos"/>'},
+ {id:"i_cn",lb:"txtCentesimas",g:"input",x:1210,y:985,info:"Input centésimas Ej2.",code:'<input name="txtCentesimas"/>'},
+ {id:"i_ds",lb:"txtDistancia",g:"input",x:1390,y:985,info:"Input distancia Ej2.",code:'<input name="txtDistancia"/>'},
+ {id:"i_nu",   lb:"txtNumero",      g:"input",x:3340,y:865,info:"Input Ej3 → POST a CalcularTriplicar.",code:'<input type="number" name="txtNumero"/>'},
+];
+
+const E=[
+ {s:"layout",t:"v_idx",tp:"wraps",lb:"@RenderBody"},{s:"layout",t:"v_ej1",tp:"wraps",lb:"@RenderBody"},
+ {s:"layout",t:"v_ej2",tp:"wraps",lb:"@RenderBody"},{s:"layout",t:"v_ej3",tp:"wraps",lb:"@RenderBody"},
+ {s:"layout",t:"a_idx",tp:"sends",lb:"nav link"},{s:"layout",t:"a_ej1",tp:"sends",lb:"nav link"},
+ {s:"layout",t:"a_ej2",tp:"sends",lb:"nav link"},{s:"layout",t:"a_ej3",tp:"sends",lb:"nav link"},
+ {s:"hc",t:"hc_list",tp:"owns",lb:"static"},{s:"hc",t:"a_idx",tp:"owns",lb:"acción"},
+ {s:"hc",t:"a_ej1",tp:"owns",lb:"acción"},{s:"hc",t:"a_cpar",tp:"owns",lb:"acción"},
+ {s:"hc",t:"a_ej2",tp:"owns",lb:"acción"},{s:"hc",t:"a_cvel",tp:"owns",lb:"acción"},
+ {s:"hc",t:"a_ej3",tp:"owns",lb:"acción"},{s:"hc",t:"a_ctri",tp:"owns",lb:"acción"},
+ {s:"a_idx",t:"v_idx",tp:"renders",lb:"View()"},{s:"a_ej1",t:"v_ej1",tp:"renders",lb:"View()"},
+ {s:"a_cpar",t:"v_ej1",tp:"renders",lb:'View("Ejercicio1")'},{s:"a_ej2",t:"v_ej2",tp:"renders",lb:"View()"},
+ {s:"a_cvel",t:"v_ej2",tp:"renders",lb:'View("Ejercicio2")'},{s:"a_ej3",t:"v_ej3",tp:"renders",lb:"View()"},
+ {s:"a_ctri",t:"v_ej3",tp:"renders",lb:'View("Ejercicio3")'},
+ {s:"a_cpar",t:"m_pq",tp:"uses",lb:"new Parquimetro()"},{s:"a_cvel",t:"m_rc",tp:"uses",lb:"new Recorrido()"},
+ {s:"a_ctri",t:"m_rg",tp:"uses",lb:"new Registro()"},
+ {s:"a_cpar",t:"f_cpq",tp:"call",lb:"Calcular()"},{s:"a_cvel",t:"f_cv",tp:"call",lb:"CalcularVelocidad()"},
+ {s:"a_ctri",t:"f_ct",tp:"call",lb:"Calcular()"},
+ {s:"a_cpar",t:"vb1",tp:"sets",lb:"ViewBag.resultado"},{s:"a_cvel",t:"vb2",tp:"sets",lb:"ViewBag.resultado"},
+ {s:"a_ej3",t:"vb3",tp:"sets",lb:"ViewBag.respuesta"},{s:"a_ctri",t:"vb3",tp:"sets",lb:"ViewBag.respuesta"},
+ {s:"a_ctri",t:"vb_err",tp:"sets",lb:"ViewBag.error"},
+ {s:"a_ctri",t:"hc_list",tp:"uses",lb:"listado.Add()"},{s:"a_ej3",t:"hc_list",tp:"reads",lb:"listado"},
+ {s:"vb1",t:"v_ej1",tp:"reads",lb:"@ViewBag.resultado"},{s:"vb2",t:"v_ej2",tp:"reads",lb:"@ViewBag.resultado"},
+ {s:"vb3",t:"v_ej3",tp:"reads",lb:"@ViewBag.respuesta"},{s:"vb_err",t:"v_ej3",tp:"reads",lb:"@ViewBag.error"},
+ {s:"m_pq",t:"p_vb",tp:"owns",lb:"prop"},{s:"m_pq",t:"p_vm",tp:"owns",lb:"prop"},
+ {s:"m_pq",t:"p_m1",tp:"owns",lb:"prop"},{s:"m_pq",t:"f_cpq",tp:"owns",lb:"método"},
+ {s:"m_rc",t:"p_hr",tp:"owns",lb:"prop"},{s:"m_rc",t:"p_m2",tp:"owns",lb:"prop"},
+ {s:"m_rc",t:"p_sg",tp:"owns",lb:"prop"},{s:"m_rc",t:"p_cn",tp:"owns",lb:"prop"},
+ {s:"m_rc",t:"p_ds",tp:"owns",lb:"prop"},{s:"m_rc",t:"f_cv",tp:"owns",lb:"método"},
+ {s:"m_rg",t:"p_nu",tp:"owns",lb:"prop"},{s:"m_rg",t:"p_to",tp:"owns",lb:"prop"},
+ {s:"m_rg",t:"p_ms",tp:"owns",lb:"prop"},{s:"m_rg",t:"f_ct",tp:"owns",lb:"método"},
+ {s:"f_cpq",t:"p_vb",tp:"reads",lb:"valorBase"},{s:"f_cpq",t:"p_vm",tp:"reads",lb:"valorMinuto"},
+ {s:"f_cpq",t:"p_m1",tp:"reads",lb:"minutos"},
+ {s:"f_cv",t:"p_hr",tp:"reads",lb:"horas"},{s:"f_cv",t:"p_m2",tp:"reads",lb:"minutos"},
+ {s:"f_cv",t:"p_sg",tp:"reads",lb:"segundos"},{s:"f_cv",t:"p_cn",tp:"reads",lb:"centesimas"},
+ {s:"f_cv",t:"p_ds",tp:"reads",lb:"distancia"},
+ {s:"f_ct",t:"p_nu",tp:"reads",lb:"numero"},{s:"f_ct",t:"p_to",tp:"sets",lb:"total"},
+ {s:"f_ct",t:"p_ms",tp:"sets",lb:"mensaje"},
+ {s:"v_ej1",t:"i_m1",tp:"owns",lb:"input"},{s:"v_ej2",t:"i_hr",tp:"owns",lb:"input"},
+ {s:"v_ej2",t:"i_mn",tp:"owns",lb:"input"},{s:"v_ej2",t:"i_sg",tp:"owns",lb:"input"},
+ {s:"v_ej2",t:"i_cn",tp:"owns",lb:"input"},{s:"v_ej2",t:"i_ds",tp:"owns",lb:"input"},
+ {s:"v_ej3",t:"i_nu",tp:"owns",lb:"input"},
+ {s:"i_m1",t:"a_cpar",tp:"sends",lb:"POST txtMinutos"},
+ {s:"i_hr",t:"a_cvel",tp:"sends",lb:"POST txtHoras"},{s:"i_mn",t:"a_cvel",tp:"sends",lb:"POST txtMinutos"},
+ {s:"i_sg",t:"a_cvel",tp:"sends",lb:"POST txtSegundos"},{s:"i_cn",t:"a_cvel",tp:"sends",lb:"POST txtCentesimas"},
+ {s:"i_ds",t:"a_cvel",tp:"sends",lb:"POST txtDistancia"},{s:"i_nu",t:"a_ctri",tp:"sends",lb:"POST txtNumero"},
+ {s:"a_cpar",t:"p_m1",tp:"sets",lb:"parquimetro.minutos="},
+ {s:"a_cvel",t:"p_hr",tp:"sets",lb:"recorrido.horas="},{s:"a_cvel",t:"p_m2",tp:"sets",lb:"recorrido.minutos="},
+ {s:"a_cvel",t:"p_sg",tp:"sets",lb:"recorrido.segundos="},{s:"a_cvel",t:"p_cn",tp:"sets",lb:"recorrido.centesimas="},
+ {s:"a_cvel",t:"p_ds",tp:"sets",lb:"recorrido.distancia="},{s:"a_ctri",t:"p_nu",tp:"sets",lb:"registro.numero="},
+];
+
+const GRP={
+ ctrl:  {fill:"#1a2f60",stroke:"#388bfd",r:38,tc:"#79c0ff"},
+ action:{fill:"#0e1e40",stroke:"#1f6feb",r:27,tc:"#58a6ff"},
+ model: {fill:"#0d2010",stroke:"#2ea043",r:33,tc:"#56d364"},
+ prop:  {fill:"#071509",stroke:"#238636",r:21,tc:"#3fb950"},
+ func:  {fill:"#071015",stroke:"#1f6feb",r:25,tc:"#79c0ff"},
+ view:  {fill:"#221800",stroke:"#bb8009",r:30,tc:"#e3b341"},
+ input: {fill:"#181200",stroke:"#7d6514",r:19,tc:"#d29922"},
+ vbag:  {fill:"#160b2e",stroke:"#6e40c9",r:24,tc:"#bc8cff"},
+ layout:{fill:"#161b22",stroke:"#8b949e",r:34,tc:"#c9d1d9"},
+};
+const EC={call:"#ff7b72",sets:"#bc8cff",reads:"#58a6ff",renders:"#d29922",
+          sends:"#3fb950",wraps:"#555",owns:"#2d3748",uses:"#1f6feb"};
+
+// ── Estado ────────────────────────────────────────────────────────────────
+const svg=document.getElementById("S");
+const G=document.getElementById("G");
+const pos={};
+N.forEach(n=>{pos[n.id]={x:n.x,y:n.y};});
+const nm={};N.forEach(n=>nm[n.id]=n);
+let cam={x:0,y:0,sc:0.3};
+let drag={on:false},dragN=null,dOff={x:0,y:0};
+let active=null,showLbl=true;
+
+// ── SVG helpers ───────────────────────────────────────────────────────────
+const NS="http://www.w3.org/2000/svg";
+function el(tag,attrs,par){
+ const e=document.createElementNS(NS,tag);
+ for(const[k,v]of Object.entries(attrs))e.setAttribute(k,v);
+ if(par)par.appendChild(e);
+ return e;
+}
+function txt(str,x,y,fs,fill,par,fw){
+ const t=el("text",{x,y,"text-anchor":"middle","dominant-baseline":"middle",
+   "font-size":fs,fill,stroke:"none","font-family":"Courier New",
+   "font-weight":fw||"bold"},par);
+ t.textContent=str; return t;
+}
+
+// ── Build SVG ──────────────────────────────────────────────────────────────
+let edgeEls={}, nodeEls={}, labelEls={};
+
+function buildEdges(){
+ const ec=document.getElementById("edges"); ec.innerHTML="";
+ edgeEls={}; labelEls={};
+ E.forEach((e,i)=>{
+  const a=nm[e.s],b=nm[e.t]; if(!a||!b)return;
+  const c=EC[e.tp]||"#555";
+  const isDash=e.tp==="owns"||e.tp==="wraps";
+  const g=el("g",{opacity:0.45},ec);
+  const line=el("line",{stroke:c,"stroke-width":1.2,
+    "stroke-dasharray":isDash?"6,4":"none",
+    "marker-end":`url(#arr-${e.tp})`},g);
+  // label bg+text
+  const lg=el("g",{opacity:0,display:"none"},g);
+  const lbg=el("rect",{fill:"#0d1117cc",rx:2},lg);
+  const ltx=el("text",{x:0,y:0,"text-anchor":"middle","dominant-baseline":"middle",
+    "font-size":9,fill:c,"font-family":"Courier New"},lg);
+  ltx.textContent=e.lb;
+  edgeEls[i]={g,line,lg,lbg,ltx,e};
+  labelEls[i]=lg;
+ });
+ // Markers per color
+ const defs=svg.querySelector("defs");
+ Object.entries(EC).forEach(([tp,c])=>{
+  if(defs.querySelector(`#arr-${tp}`))return;
+  const m=el("marker",{id:`arr-${tp}`,markerWidth:7,markerHeight:7,
+    refX:6,refY:3.5,orient:"auto"},defs);
+  const p=el("polygon",{points:"0 0, 7 3.5, 0 7",fill:c},m);
+ });
+}
+
+function buildNodes(){
+ const nc=document.getElementById("nodes"); nc.innerHTML="";
+ nodeEls={};
+ N.forEach(n=>{
+  const g2=GRP[n.g]||GRP.prop;
+  const ng=el("g",{cursor:"pointer"},nc);
+  ng.style.cursor="pointer";
+  const circ=el("circle",{r:g2.r,fill:g2.fill,stroke:g2.stroke,"stroke-width":1.4},ng);
+  // multiline label
+  const lines=n.lb.split("\n");
+  const fs=Math.max(6,Math.min(11,g2.r*0.28));
+  const lh=fs*1.3;
+  lines.forEach((l,i)=>{
+   const t=el("text",{x:0,y:(-(lines.length-1)/2+i)*lh+fs*0.35,
+    "text-anchor":"middle","dominant-baseline":"middle","font-size":fs,
+    fill:g2.tc,"font-family":"Courier New","font-weight":"bold","stroke":"none"},ng);
+   t.textContent=l;
+  });
+  ng.addEventListener("mouseenter",()=>{ if(!active||active.id!==n.id) setHov(n); });
+  ng.addEventListener("mouseleave",()=>{ if(!active||active.id!==n.id) clearHov(); });
+  ng.addEventListener("click",e=>{ e.stopPropagation(); onNodeClick(n,e); });
+  // drag
+  ng.addEventListener("pointerdown",e=>{ e.stopPropagation();
+   const w=toWorld(e.clientX,e.clientY);
+   dragN=n; dOff={x:w.x-pos[n.id].x,y:w.y-pos[n.id].y};
+   ng.setPointerCapture(e.pointerId);
+  });
+  ng.addEventListener("pointermove",e=>{
+   if(!dragN||dragN.id!==n.id)return;
+   const w=toWorld(e.clientX,e.clientY);
+   pos[n.id]={x:w.x-dOff.x,y:w.y-dOff.y};
+   updatePositions();
+  });
+  ng.addEventListener("pointerup",()=>{ dragN=null; });
+  nodeEls[n.id]={ng,circ,g2};
+ });
+}
+
+// ── Transform helpers ──────────────────────────────────────────────────────
+function svgPt(cx,cy){
+ const r=svg.getBoundingClientRect();
+ return{x:cx-r.left,y:cy-r.top};
+}
+function toWorld(cx,cy){
+ const s=svgPt(cx,cy);
+ return{x:(s.x-cam.x)/cam.sc,y:(s.y-cam.y)/cam.sc};
+}
+
+// ── Update positions ───────────────────────────────────────────────────────
+function updatePositions(){
+ // move node groups
+ N.forEach(n=>{
+  const el2=nodeEls[n.id]; if(!el2)return;
+  el2.ng.setAttribute("transform",`translate(${pos[n.id].x},${pos[n.id].y})`);
+ });
+ // move edges
+ Object.values(edgeEls).forEach(({line,lg,lbg,ltx,e})=>{
+  const a=nm[e.s],b=nm[e.t]; if(!a||!b)return;
+  const pa=pos[a.id],pb=pos[b.id];
+  const ga=GRP[a.g]||GRP.prop, gb=GRP[b.g]||GRP.prop;
+  const dx=pb.x-pa.x,dy=pb.y-pa.y,L=Math.sqrt(dx*dx+dy*dy);
+  if(L<1)return;
+  const ux=dx/L,uy=dy/L;
+  const x1=pa.x+ux*ga.r,y1=pa.y+uy*ga.r;
+  const x2=pb.x-ux*(gb.r+7),y2=pb.y-uy*(gb.r+7);
+  line.setAttribute("x1",x1);line.setAttribute("y1",y1);
+  line.setAttribute("x2",x2);line.setAttribute("y2",y2);
+  const mx=(x1+x2)/2,my=(y1+y2)/2;
+  ltx.setAttribute("x",mx);ltx.setAttribute("y",my);
+  const tw=ltx.textContent.length*5.5+6;
+  lbg.setAttribute("x",mx-tw/2);lbg.setAttribute("y",my-6);
+  lbg.setAttribute("width",tw);lbg.setAttribute("height",12);
+ });
+}
+
+// ── Camera transform ───────────────────────────────────────────────────────
+function applyCam(){
+ G.setAttribute("transform",`translate(${cam.x},${cam.y}) scale(${cam.sc})`);
+ // update grid offset
+ const gp=svg.querySelector("#grid");
+ if(gp){
+  gp.setAttribute("patternTransform",`translate(${cam.x%100*cam.sc},${cam.y%100*cam.sc}) scale(${cam.sc})`);
+ }
+}
+
+// ── Highlight ──────────────────────────────────────────────────────────────
+function setHov(n){ applyHL(n); }
+function clearHov(){ if(!active)applyHL(null); }
+
+function applyHL(n){
+ const hiId=n?n.id:null;
+ Object.values(nodeEls).forEach(({ng,circ,g2},i)=>{
+  const nid=N.find(x=>nodeEls[x.id]===nodeEls[Object.keys(nodeEls)[i]])?.id;
+ });
+ // simpler: iterate by id
+ N.forEach(nd=>{
+  const el2=nodeEls[nd.id]; if(!el2)return;
+  const isHi=hiId&&nd.id===hiId;
+  const dim=hiId&&nd.id!==hiId;
+  el2.ng.style.opacity=dim?"0.2":"1";
+  el2.circ.setAttribute("stroke",isHi?"#fff":el2.g2.stroke);
+  el2.circ.setAttribute("stroke-width",isHi?"2.5":"1.4");
+ });
+ Object.values(edgeEls).forEach(({g,lg,e})=>{
+  const isHi=hiId&&(e.s===hiId||e.t===hiId);
+  g.setAttribute("opacity",hiId?(isHi?"1":"0.06"):"0.45");
+  lg.setAttribute("display",isHi&&showLbl?"":"none");
+  lg.setAttribute("opacity",isHi?"1":"0");
+ });
+}
+
+// ── Click ──────────────────────────────────────────────────────────────────
+function onNodeClick(n,ev){
+ if(active&&active.id===n.id){
+  active=null; applyHL(null); hideTip(); return;
+ }
+ active=n; applyHL(n);
+ const s=svgPt(ev.clientX,ev.clientY);
+ showTip(n,ev.clientX,ev.clientY);
+}
+svg.addEventListener("click",()=>{active=null;applyHL(null);hideTip();});
+
+// ── Tooltip ────────────────────────────────────────────────────────────────
+function showTip(n,cx,cy){
+ document.getElementById("t-title").textContent=n.lb.replace(/\n/g," ");
+ document.getElementById("t-sub").textContent=`[${n.g}]  id: ${n.id}`;
+ document.getElementById("t-code").textContent=n.code||"";
+ document.getElementById("t-info").textContent=n.info||"";
+ const rels=E.filter(e=>e.s===n.id||e.t===n.id);
+ document.getElementById("t-rels").textContent=
+  rels.map(e=>`${e.tp.padEnd(8)} ${e.s}→${e.t}  (${e.lb})`).join("\n");
+ const tip=document.getElementById("tip");
+ tip.style.display="block";
+ let lx=cx+14, ly=cy-20;
+ if(lx+290>window.innerWidth) lx=cx-300;
+ if(ly+260>window.innerHeight) ly=window.innerHeight-265;
+ if(ly<46) ly=46;
+ tip.style.left=lx+"px"; tip.style.top=ly+"px";
+}
+function hideTip(){ document.getElementById("tip").style.display="none"; }
+
+// ── Pan ────────────────────────────────────────────────────────────────────
+let panStart=null;
+svg.addEventListener("pointerdown",e=>{
+ if(e.target.closest("g[cursor]"))return;
+ panStart={sx:e.clientX,sy:e.clientY,cx:cam.x,cy:cam.y};
+ svg.setPointerCapture(e.pointerId);
+ svg.style.cursor="grabbing";
+});
+svg.addEventListener("pointermove",e=>{
+ if(!panStart)return;
+ cam.x=panStart.cx+(e.clientX-panStart.sx);
+ cam.y=panStart.cy+(e.clientY-panStart.sy);
+ applyCam();
+});
+svg.addEventListener("pointerup",()=>{panStart=null;svg.style.cursor="grab";});
+
+// ── Wheel zoom ─────────────────────────────────────────────────────────────
+svg.addEventListener("wheel",e=>{
+ e.preventDefault();
+ const r=svg.getBoundingClientRect();
+ const sx=e.clientX-r.left,sy=e.clientY-r.top;
+ const f=e.deltaY<0?1.13:0.88;
+ const wx=(sx-cam.x)/cam.sc, wy=(sy-cam.y)/cam.sc;
+ cam.sc=Math.max(0.05,Math.min(4,cam.sc*f));
+ cam.x=sx-wx*cam.sc; cam.y=sy-wy*cam.sc;
+ applyCam();
+},{passive:false});
+
+// ── Fit all ────────────────────────────────────────────────────────────────
+function fitAll(){
+ const wrap=document.getElementById("svg-wrap");
+ const W=wrap.clientWidth||window.innerWidth;
+ const H=wrap.clientHeight||(window.innerHeight-66);
+ let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+ N.forEach(n=>{
+  const g=GRP[n.g]||GRP.prop;
+  x0=Math.min(x0,n.x-g.r);y0=Math.min(y0,n.y-g.r);
+  x1=Math.max(x1,n.x+g.r);y1=Math.max(y1,n.y+g.r);
+ });
+ const pad=50;
+ cam.sc=Math.min((W-pad*2)/(x1-x0),(H-pad*2)/(y1-y0),1.2);
+ cam.x=W/2-(x0+x1)/2*cam.sc;
+ cam.y=H/2-(y0+y1)/2*cam.sc;
+ applyCam();
+}
+
+function resetView(){ active=null; applyHL(null); hideTip(); fitAll(); }
+function toggleLbl(){ showLbl=!showLbl; applyHL(active); }
+
+// ── Init ───────────────────────────────────────────────────────────────────
+buildEdges();
+buildNodes();
+updatePositions();
+document.getElementById("sb").textContent=`nodos: ${N.length} | aristas: ${E.length}`;
+// Esperar a que el DOM tenga dimensiones reales
+requestAnimationFrame(()=>requestAnimationFrame(fitAll));
+window.addEventListener("resize",()=>{ if(!active)fitAll(); });
+
+// ── Guardar / Cargar Layout JSON ───────────────────────────────────────────
+function saveLayout(){
+ const data={
+  cam:{x:Math.round(cam.x*100)/100, y:Math.round(cam.y*100)/100, sc:Math.round(cam.sc*10000)/10000},
+  nodes:{}
+ };
+ N.forEach(n=>{
+  data.nodes[n.id]={x:Math.round(pos[n.id].x*10)/10, y:Math.round(pos[n.id].y*10)/10};
+ });
+ const json=JSON.stringify(data,null,2);
+ const a=document.createElement("a");
+ a.href="data:application/json;charset=utf-8,"+encodeURIComponent(json);
+ a.download="mapa_mvc_layout.json";
+ a.click();
+ toast("💾 Layout guardado como mapa_mvc_layout.json");
+}
+
+function loadLayout(ev){
+ const file=ev.target.files[0]; if(!file)return;
+ const reader=new FileReader();
+ reader.onload=e=>{
+  try{
+   const data=JSON.parse(e.target.result);
+   // Cargar posiciones de nodos
+   let loaded=0;
+   if(data.nodes){
+    Object.entries(data.nodes).forEach(([id,p])=>{
+     if(pos[id]&&typeof p.x==="number"&&typeof p.y==="number"){
+      pos[id]={x:p.x,y:p.y}; loaded++;
+     }
+    });
+   }
+   // Cargar cámara si existe
+   if(data.cam&&typeof data.cam.sc==="number"){
+    cam.x=data.cam.x; cam.y=data.cam.y; cam.sc=data.cam.sc;
+    applyCam();
+   }
+   updatePositions();
+   toast(`📂 Layout cargado · ${loaded}/${N.length} nodos restaurados`,"#58a6ff");
+  }catch(err){
+   toast("❌ Error al leer JSON: "+err.message,"#ff7b72");
+  }
+ };
+ reader.readAsText(file);
+ ev.target.value=""; // reset para poder cargar el mismo archivo otra vez
+}
+
+function toast(msg,color){
+ color=color||"#56d364";
+ const t=document.createElement("div");
+ t.style.cssText=`position:fixed;bottom:34px;left:50%;transform:translateX(-50%);
+  background:#161b22;border:1px solid ${color};color:${color};
+  font-size:10px;font-family:'Courier New',monospace;
+  padding:6px 14px;border-radius:6px;z-index:999;
+  box-shadow:0 4px 16px #0008;pointer-events:none;
+  opacity:1;transition:opacity .4s`;
+ t.textContent=msg;
+ document.body.appendChild(t);
+ setTimeout(()=>{ t.style.opacity="0"; setTimeout(()=>t.remove(),400); },2600);
+}
+</script>
+</body>
+</html>
